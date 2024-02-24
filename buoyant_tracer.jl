@@ -2,18 +2,19 @@ using Oceananigans
 using Oceananigans.Units: minute, minutes, hours
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Printf
-using GLMakie
+#using GLMakie
 
+arch = GPU()
 Lx = Ly = 128
-Lz = 24
-Nx = Ny = 96
-Nz = 48
+Lz = 64
+Nx = Ny = 128
+Nz = 64
 
 # Boundary conditions
 τˣ = -1e-4
 N² = 2e-5
 f = 1e-4
-h₀ = 5 # initial mixed layer depth
+h₀ = 10 # initial mixed layer depth
 w₀ = 1e-2 # terminal velocity of rising particles
 
 # Waves
@@ -24,7 +25,7 @@ k = 60     # m
 σ = sqrt(g * k) # s⁻¹
 Uˢ = a^2 * σ * k # m s⁻¹
 
-grid = RectilinearGrid(size=(Nx, Ny, Nz), x=(0, Lx), y=(0, Ly), z=(-Lz, 0))
+grid = RectilinearGrid(arch, size=(Nx, Ny, Nz), x=(0, Lx), y=(0, Ly), z=(-Lz, 0))
 
 @inline ∂z_uˢ(z, t, p) = 1 / (2 * p.k) * p.Uˢ * exp(2 * p.k * z)
 stokes_drift = UniformStokesDrift(∂z_uˢ = ∂z_uˢ , parameters=(; k, Uˢ))
@@ -68,7 +69,7 @@ uᵢ(x, y, z) = u★ * 1e-3 * Ξ(z)
 
 set!(model, u=uᵢ, w=uᵢ, b=bᵢ, c=cᵢ)
 
-simulation = Simulation(model, Δt=20.0, stop_iteration=400)
+simulation = Simulation(model, Δt=20.0, stop_time = 8hours)
 conjure_time_step_wizard!(simulation, cfl=0.7, max_Δt=1minute)
 
 function progress(simulation)
@@ -89,17 +90,18 @@ end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(20))
 
+time_interval = 2minutes
 Nz = size(grid, 3)
 outputs = merge(model.velocities, model.tracers)
 simulation.output_writers[:xy] = JLD2OutputWriter(model, outputs,
                                                   indices = (:, :, Nz),
-                                                  schedule = TimeInterval(1minutes),
+                                                  schedule = TimeInterval(time_interval),
                                                   filename = "langmuir_particles_xy.jld2",
                                                   overwrite_existing = true)
 
 simulation.output_writers[:yz] = JLD2OutputWriter(model, outputs,
                                                   indices = (1, :, :),
-                                                  schedule = TimeInterval(1minutes),
+                                                  schedule = TimeInterval(time_interval),
                                                   filename = "langmuir_particles_yz.jld2",
                                                   overwrite_existing = true)
 
@@ -111,7 +113,7 @@ averages = (
 )
             
 simulation.output_writers[:z] = JLD2OutputWriter(model, averages,
-                                                 schedule = TimeInterval(10minutes),
+                                                 schedule = TimeInterval(time_interval),
                                                  filename = "langmuir_particles_averages.jld2",
                                                  overwrite_existing = true)
 
@@ -119,6 +121,7 @@ simulation.output_writers[:z] = JLD2OutputWriter(model, averages,
 
 run!(simulation)
 
+#=
 wt = FieldTimeSeries("langmuir_particles_xy.jld2", "w")
 cxyt = FieldTimeSeries("langmuir_particles_xy.jld2", "c")
 uyzt = FieldTimeSeries("langmuir_particles_yz.jld2", "u")
@@ -147,4 +150,4 @@ heatmap!(axuyz, uyzn, colorrange=(-wlim, wlim), colormap=:balance)
 heatmap!(axcyz, cyzn, colorrange=(0, clim), colormap=:solar)
 
 display(fig)
-
+=#
