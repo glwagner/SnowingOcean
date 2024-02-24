@@ -1,13 +1,13 @@
 using Oceananigans
 using Oceananigans.Units: minute, minutes, hours
-using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.BoundaryConditions: fill_halo_regions!, ImpenetrableBoundaryCondition
 using Printf
 using GLMakie
 
 Lx = Ly = 128
 Lz = 24
-Nx = Ny = 96
-Nz = 48
+Nx = Ny = 64
+Nz = 32
 
 # Boundary conditions
 τˣ = -1e-4
@@ -32,7 +32,11 @@ stokes_drift = UniformStokesDrift(∂z_uˢ = ∂z_uˢ , parameters=(; k, Uˢ))
 u_bcs = FieldBoundaryConditions(top = FluxBoundaryCondition(τˣ))
 coriolis = FPlane(; f) # s⁻¹
 
-wc = ZFaceField(grid)
+w_location = (Face, Center, Center)
+w_bcs = FieldBoundaryConditions(grid, w_location,
+                                top = ImpenetrableBoundaryCondition(),
+                                bottom = ImpenetrableBoundaryCondition())
+wc = ZFaceField(grid, boundary_conditions=w_bcs)
 set!(wc, w₀)
 fill_halo_regions!(wc)
 c_forcing = AdvectiveForcing(w=wc)
