@@ -15,17 +15,17 @@ Nz = 64
 N² = 2e-5
 f = 1e-4
 h₀ = 10 # initial mixed layer depth
-w₀ = 1e-2 # terminal velocity of rising particles
+w₀ = 1e-3 # terminal velocity of rising particles
 
 # Waves
 g = 9.81
 a = 0.8    # m
-k = 60     # m
-λ = 2π / k # m⁻¹
+λ = 60     # m
+k = 2π / λ # m⁻¹
 σ = sqrt(g * k) # s⁻¹
 Uˢ = a^2 * σ * k # m s⁻¹
 
-grid = RectilinearGrid(arch, size=(Nx, Ny, Nz), x=(0, Lx), y=(0, Ly), z=(-Lz, 0))
+grid = RectilinearGrid(arch, size=(Nx, Ny, Nz), halo=(5, 5, 5), x=(0, Lx), y=(0, Ly), z=(-Lz, 0))
 
 @inline ∂z_uˢ(z, t, p) = 1 / (2 * p.k) * p.Uˢ * exp(2 * p.k * z)
 stokes_drift = UniformStokesDrift(∂z_uˢ = ∂z_uˢ , parameters=(; k, Uˢ))
@@ -43,7 +43,7 @@ fill_halo_regions!(wc)
 c_forcing = AdvectiveForcing(w=wc)
 
 model = NonhydrostaticModel(; grid, coriolis, stokes_drift,
-                            advection = WENO(),
+                            advection = WENO(order=9),
                             timestepper = :RungeKutta3,
                             tracers = (:b, :c),
                             buoyancy = BuoyancyTracer(),
@@ -96,7 +96,7 @@ end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(20))
 
-time_interval = 2minutes
+time_interval = 20minutes
 Nz = size(grid, 3)
 outputs = merge(model.velocities, model.tracers)
 simulation.output_writers[:xy] = JLD2OutputWriter(model, outputs,
