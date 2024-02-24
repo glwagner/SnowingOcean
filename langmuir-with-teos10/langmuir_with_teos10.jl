@@ -1,7 +1,7 @@
 using Oceananigans
 using Oceananigans.Units: minute, minutes, hours
 using Oceananigans.BoundaryConditions: fill_halo_regions!, ImpenetrableBoundaryCondition
-using SeawaterPolynomials
+using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Printf
 #using GLMakie
 
@@ -21,6 +21,9 @@ N² = 2e-5
 f = 1e-4
 h₀ = 10 # initial mixed layer depth
 w₀ = 1e-3 # terminal velocity of rising particles
+S₀ = 25 # surface salinity
+μ = 0.054 # slope of a linear liquidus model
+Tᵢ = - μ * S₀ # initial temperature (equal to freezing temperature)
 
 # Wave parameters
 g = gravitational_acceleration = 9.81
@@ -53,10 +56,10 @@ fill_halo_regions!(wc)
 c_forcing = AdvectiveForcing(w=wc)
 
 equation_of_state = TEOS10EquationOfState()
-buoyancy = SeawaterEquationOfState(; equation_of_state, gravitational_acceleration)
+buoyancy = SeawaterBuoyancy(; equation_of_state, gravitational_acceleration)
 
 model = NonhydrostaticModel(; grid, coriolis, stokes_drift, buoyancy,
-                            advection = WENO(order=9),
+                            advection = WENO(order=5),
                             timestepper = :RungeKutta3,
                             tracers = (:T, :S, :c),
                             forcing = (; c=c_forcing),
@@ -64,14 +67,18 @@ model = NonhydrostaticModel(; grid, coriolis, stokes_drift, buoyancy,
 
 Ξ(z) = randn() * exp(z / 4)
 
-bᴺ(z) = if z > - h₀
-    - N² * h₀
+β = SeawaterPolynomials.thermal_expansion(Tᵢ, S₀, 0, equation_of_state) 
+dz_Sᵢ = - g * β * N²
+
+Sᵢᵢ(z) = if z > - h₀
+    S₀
 else
-    N² * z
+    S₀ + dz_Sᵢ * z
 end
 
 Δz = zspacings(grid, Center())
-bᵢ(x, y, z) = bᴺ(z) + 1e-3 * Ξ(z) * N² * model.grid.Lz
+ΔS = dz_Sᵢ * model.grid.Lz
+Sᵢ(x, y, z) = Sᵢᵢ(z) + 1e-3 * Ξ(z) * ΔS
 
 cᵢ(x, y, z) = if z > - h₀/2
     1
@@ -82,10 +89,10 @@ end
 u★ = sqrt(abs(τˣ))
 uᵢ(x, y, z) = u★ * 1e-3 * Ξ(z)
 
-set!(model, u=uᵢ, w=uᵢ, b=bᵢ, c=cᵢ)
+set!(model, u=uᵢ, w=uᵢ, S=Sᵢ, T=Tᵢ, c=cᵢ)
 
-simulation = Simulation(model; Δt=20.0, stop_time)
-conjure_time_step_wizard!(simulation, cfl=0.7, max_Δt=1minute)
+simulation = Simulation(model; Δt=1.0, stop_time)
+conjure_time_step_wizard!(simulation, cfl=0.5, max_Δt=1minute)
 
 function progress(simulation)
     u, v, w = simulation.model.velocities
@@ -124,7 +131,8 @@ simulation.output_writers[:yz] = JLD2OutputWriter(model, outputs,
 averages = (
     u =  Average(model.velocities.u, dims=(1, 2)),
     v =  Average(model.velocities.v, dims=(1, 2)),
-    b =  Average(model.tracers.b, dims=(1, 2)),
+    S =  Average(model.tracers.S, dims=(1, 2)),
+    T =  Average(model.tracers.T, dims=(1, 2)),
     c =  Average(model.tracers.c, dims=(1, 2)),
 )
             
@@ -132,8 +140,6 @@ simulation.output_writers[:z] = JLD2OutputWriter(model, averages,
                                                  schedule = TimeInterval(save_interval),
                                                  filename = fileprefix * "_averages.jld2",
                                                  overwrite_existing = true)
-
-
 
 run!(simulation)
 
