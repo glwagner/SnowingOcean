@@ -84,7 +84,9 @@ function progress(simulation)
                    iteration(simulation),
                    prettytime(time(simulation)),
                    prettytime(simulation.Δt),
-                   maximum(abs, u), maximum(abs, v), maximum(abs, w),
+                   maximum(abs, interior(u)),
+                   maximum(abs, interior(v)),
+                   maximum(abs, interior(w)),
                    prettytime(simulation.run_wall_time))
 
     @info msg
